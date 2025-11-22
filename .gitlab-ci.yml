@@ -1,0 +1,7 @@
+﻿build:
+  image: maven:3.8.6-openjdk-21
+  script:
+    - mvn clean compile test package
+  artifacts:
+    paths:
+      - target/*.jar
