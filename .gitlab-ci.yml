@@ -1,7 +1,81 @@
-﻿build:
+﻿# .gitlab-ci.yml
+
+# Настройка правил запуска
+workflow:
+  rules:
+    # Запуск только при создании/обновлении Merge Request в main
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      when: always
+    # Или при пуше в ветки кроме main
+    - if: '$CI_COMMIT_BRANCH != "main"'
+      when: always
+    # Для main только вручную
+    - if: '$CI_COMMIT_BRANCH == "main"'
+      when: manual
+
+# Этапы пайплайна
+stages:
+  - build
+  - test
+  - package
+
+# Кэширование для ускорения сборок
+cache:
+  paths:
+    - .m2/repository/
+  key: "$CI_COMMIT_REF_SLUG"
+
+# Переменные окружения
+variables:
+  MAVEN_OPTS: "-Dmaven.repo.local=$CI_PROJECT_DIR/.m2/repository"
+  MAVEN_CLI_OPTS: "--batch-mode --errors --fail-at-end --show-version"
+
+# 1. Этап сборки
+build:
+  stage: build
+  tags:
+    - saas-linux-small-amd64  # Linux runner
+  image: maven:3.8.6-openjdk-21  # Docker образ с Maven и JDK 21
+  script:
+    - echo "Сборка проекта..."
+    - mvn $MAVEN_CLI_OPTS clean compile
+  artifacts:
+    paths:
+      - target/classes/
+    expire_in: 1 hour
+
+# 2. Этап тестирования
+test:
+  stage: test
+  tags:
+    - saas-linux-small-amd64
   image: maven:3.8.6-openjdk-21
   script:
-    - mvn clean compile test package
+    - echo "Запуск тестов..."
+    - mvn $MAVEN_CLI_OPTS test
+  artifacts:
+    when: always
+    reports:
+      junit:
+        - target/surefire-reports/TEST-*.xml
+    paths:
+      - target/surefire-reports/
+    expire_in: 1 week
+  dependencies:
+    - build
+
+# 3. Этап упаковки
+package:
+  stage: package
+  tags:
+    - saas-linux-small-amd64
+  image: maven:3.8.6-openjdk-21
+  script:
+    - echo "Создание JAR файла..."
+    - mvn $MAVEN_CLI_OPTS package -DskipTests
   artifacts:
     paths:
       - target/*.jar
+    expire_in: 1 month
+  dependencies:
+    - test
